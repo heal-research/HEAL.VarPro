@@ -13,17 +13,17 @@ The code uses C#, runs with .NET 5 on multiple platforms and uses ALGLIB for lin
 
 # Building 
 
-In the project root folder run:
-```dotnet build HEAL.VarPro.sln```
+In the project root folder run: 
+```dotnet build HEAL.VarPro.sln``` 
 
-It generates the library ```HEAL.VarPro.dll``` as well as a demo program ```HEAL.VarPro.Demo.dll``` and the unit tests ```HEAL.VarPro.Test.dll```
+It generates the library ```HEAL.VarPro.dll``` as well as a demo program ```HEAL.VarPro.Demo.dll``` and the unit tests ```HEAL.VarPro.Test.dll```.
 
 # Running the demo and the unit tests
 
-In the project root folder run:
-```dotnet run --project .\HEAL.VarPro.Demo\HEAL.VarPro.Demo.csproj```
+In the project root folder run: 
+```dotnet run --project .\HEAL.VarPro.Demo\HEAL.VarPro.Demo.csproj``` 
 
-Demo output:
+Demo output for the 'Complex Exponential Model' from (Chen et al. 2019): 
 ```
 > dotnet run --project .\HEAL.VarPro.Demo\HEAL.VarPro.Demo.csproj
  It     C        ||r||²      ||c||²      step      lam         w                 alpha
@@ -57,27 +57,27 @@ Identified alpha: 1.115e+000 9.650e-001 1.501e+001
 MSE (test)        1.22290e-003
 ```
 
-To execute all unit tests run:
+To execute all unit tests run: 
 ```dotnet test```
 
 ## Example output for Section III.C "Parameter Estimation of a Complex Exponential Model"
 The results for 'Classical VP' differ from the results reported in the original paper (Chen et al. 2019) which is probably caused by using SVD and rank determination also for the classical VP. As a consequence the results of classical and regularized VP are more similar than reported in the paper. The effect of wGCV regularization is less extreme but visible in the Lake Erie Level example.
 
-(data/ComplexExponential.png)
+![Plot for Complex exponential example](data/ComplexExponential.png)
 
 ## Example output for Section III.A "ExpAR model for Lake Erie levels"
-(data/LakeErie.png)
+![Plot for Lake Erie level ExpAR model](data/LakeErie.png)
 
 
 # Using HEAL.VarPro
 ```HEAL.VarPro.dll``` uses .NET Standard 2.1 and can be included in .NET and .NET Framework projects.
 Copy ```HEAL.VarPro.dll``` into your project folder and add an assembly reference. Don't forget to copy the .dll to your project output folder as well.
 
-# ALGLIB Dependency
+## ALGLIB Dependency
 The code uses ALGLIB Free Edition version 3.17.0 which is distributed under GPL3. The source code is available from https://www.alglib.net/.
-ALGLIB Commercial Edition is distributed under license which is friendly to commericial users and can be requested from https://www.alglib.net/.
+ALGLIB Commercial Edition is distributed under license which is friendly to commercial users and can be requested from https://www.alglib.net/.
 
-# License
+## License
 HEAL.VarPro is [licensed] {LICENSE.txt} under the MIT License.
 
 ```
