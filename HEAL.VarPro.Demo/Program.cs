@@ -69,12 +69,15 @@ namespace HEAL.VarPro.Demo {
 
       void writeProgress(VariableProjection.Report rep, CancellationToken cancelToken) {
         var coeffNormSqr = Dot(rep.coeff, rep.coeff);
-        Console.WriteLine($"{rep.iter} ||r||² {rep.residNormSqr:e3} ||coeff||² {coeffNormSqr:e3} obj. {rep.residNormSqr + rep.lambda * coeffNormSqr:e3} line-search step: {rep.lineSearchStep:e2} lam: {rep.lambda:e3} w: {rep.w:e3} a: [{string.Join(" ", rep.alpha.Select(ai => ai.ToString("e3")))}]");
+        Console.WriteLine($"{rep.iter,3}{rep.residNormSqr + rep.lambda * coeffNormSqr,11:e3}{rep.residNormSqr,11:e3}{coeffNormSqr,11:e3}" +
+                          $"{rep.lineSearchStep,10:e2}{rep.lambda,11:e3}{rep.w,11:e3} [{string.Join(" ", rep.alpha.Take(3).Select(ai => ai.ToString("e3")))}]");
       }
+
+      Console.WriteLine($"{"It",3}{"     C     ",11}{"   ||r||²   ",11}{"  ||c||²  ",11}{"  step  ",10}{"    lam    ",11}{"     w     ",11}{"    alpha    ",21}");
 
       double[] initialAlpha = new[] { 0.8457, 2.3331, 7.4757 };
       var alpha = (double[])initialAlpha.Clone();
-      VariableProjection.Fit(phiFunc, jacFunc, y, alpha, out var coeff, iterationCallback: writeProgress);
+      VariableProjection.Fit(phiFunc, jacFunc, y, alpha, out var coeff, out _, iterationCallback: writeProgress, useWGCV: true);
 
       var yPred = new double[N];
       var r = new double[N];
@@ -89,10 +92,14 @@ namespace HEAL.VarPro.Demo {
       Console.WriteLine($"Optimal    alpha: {string.Join(" ", optAlpha.Select(ai => ai.ToString("e3")))}");
       Console.WriteLine($"Identified alpha: {string.Join(" ", alpha.Select(ai => ai.ToString("e3")))}");
       Console.WriteLine();
-      Console.WriteLine($"||coeff||²        {Dot(coeff, coeff)}");
-      Console.WriteLine($"||resid_test||²   {Dot(r, r)}");
-      Console.WriteLine($"||resid_test||    {Math.Sqrt(Dot(r, r))}");
-      Console.WriteLine($"MSE (test)        {Dot(r, r) / r.Length}");
+      Console.WriteLine($"||coeff||²        {Dot(coeff, coeff):e5}");
+      Console.WriteLine($"||resid_test||²   {Dot(r, r):e5}");
+      Console.WriteLine($"||resid_test||    {Math.Sqrt(Dot(r, r)):e5}");
+      Console.WriteLine($"MSE (test)        {Dot(r, r) / r.Length:e5}");
+
+      // for (int i = 0; i < yTest.Length; i++) {
+      //   Console.WriteLine($"{y[i]} {yTest[i]} {yPred[i]}");
+      // }
 
 
       // compare to result from paper
@@ -108,15 +115,12 @@ namespace HEAL.VarPro.Demo {
         }
         r[i] = yTest[i] - yPred[i];
       }
-      Console.WriteLine($"||coeff||²        {Dot(coeff, coeff)}");
-      Console.WriteLine($"||resid_test||²   {Dot(r, r)}");
-      Console.WriteLine($"||resid_test||    {Math.Sqrt(Dot(r, r))}");
-      Console.WriteLine($"MSE (test)        {Dot(r, r) / r.Length}");
+      Console.WriteLine($"||coeff||²        {Dot(coeff, coeff):e5}");
+      Console.WriteLine($"||resid_test||²   {Dot(r, r):e5}");
+      Console.WriteLine($"||resid_test||    {Math.Sqrt(Dot(r, r)):e5}");
+      Console.WriteLine($"MSE (test)        {Dot(r, r) / r.Length:e5}");
 
-      // for (int i = 0; i < yTest.Length; i++) {
-      //   Console.WriteLine($"{yTest[i]} {yPred[i]}");
-      // }
-      //
+      
     }
 
     private static double RandNormal(Random random, double noiseSigma) {

@@ -50,7 +50,8 @@ namespace HEAL.VarPro {
     private double[,] F, dF, J, U, VT, Jac2;
     private int[,] ind;
 
-    public static void Fit(FeatureFunc Phi, JacobianFunc Jac, double[] y, double[] alpha, out double[] coeff, int maxIters = 20, Action<Report, CancellationToken> iterationCallback = null, bool useWGCV = true, double eps = 1e-16) {
+    public static void Fit(FeatureFunc Phi, JacobianFunc Jac, double[] y, double[] alpha, out double[] coeff, out Report report,
+      int maxIters = 20, Action<Report, CancellationToken> iterationCallback = null, bool useWGCV = true, double eps = 1e-16) {
       // Step 1: Choose theta_N_0 \in R^k, a small positive number eps and 
       //         the maximum iteration N. Set k = 0;
 
@@ -61,10 +62,10 @@ namespace HEAL.VarPro {
       varpro.maxIters = maxIters;
       varpro.alpha = alpha; // don't copy alpha. Fit() updates alpha
 
-      varpro.FitInternal();
+      varpro.FitInternal(out report);
       coeff = varpro.coeff;
     }
-    private void FitInternal() {
+    private void FitInternal(out Report report) {
       int k = 0;
       int rank;
       var w = 1.0;
@@ -73,8 +74,9 @@ namespace HEAL.VarPro {
       lambda = nextLambda;
       w = nextW;
       var cancellationTokenSource = new CancellationTokenSource();
+      report = null;
       while (k <= maxIters) {
-        CalculateJacobianKaufman(Jac, alpha, coeff, U, s, VT, rank, r, ref J);
+        CalculateJacobian(Jac, alpha, coeff, U, s, VT, rank, r, ref J);
 
         // Step 4: Calculate the gradient of the objective function (17)
         //         with resprect to the nonlinear parameters
@@ -83,6 +85,17 @@ namespace HEAL.VarPro {
         // Step 5: if ||∇C||^2 < eps, terminate the algorithm
         var gradNorm = 0.0;
         for (int i = 0; i < grad.Length; i++) gradNorm += grad[i] * grad[i];
+
+        report = new Report() {
+          iter = k,
+          residNorm = Math.Sqrt(resNormSqr),
+          lambda = lambda,
+          residNormSqr = resNormSqr,
+          w = w,
+          alpha = (double[])alpha.Clone(),
+          coeff = (double[])coeff.Clone(),
+          gradNorm = gradNorm
+        };
 
         if (gradNorm < eps) break;
 
@@ -121,6 +134,7 @@ namespace HEAL.VarPro {
           fx = resNormSqr + nextLambda * coeffNormSqr;
           fx_new = newResNormSqr + nextLambda * newCoeffNormSqr;
         }
+        report.lineSearchStep = t;
 
         lambda = nextLambda;
         w = nextW;
@@ -133,17 +147,8 @@ namespace HEAL.VarPro {
         //         turn to step 2.
         k++;
 
-        iterationCallback?.Invoke(new Report() {
-          iter = k,
-          residNorm = Math.Sqrt(resNormSqr),
-          lambda = lambda,
-          residNormSqr = resNormSqr,
-          w = w,
-          alpha = (double[])alpha.Clone(),
-          coeff = (double[])coeff.Clone(),
-          gradNorm = gradNorm,
-          lineSearchStep = t
-        }, cancellationTokenSource.Token);
+        
+        iterationCallback?.Invoke(report, cancellationTokenSource.Token);
 
         if (cancellationTokenSource.IsCancellationRequested) break;
 
@@ -216,7 +221,8 @@ namespace HEAL.VarPro {
     }
 
 
-    private void CalculateJacobianKaufman(JacobianFunc Jac, double[] alpha, double[] coeff, double[,] U, double[] s, double[,] VT, int rank, double[] resid, ref double[,] J, bool full = true) {
+    // set full=false to drop the second term from the Jacobian (Kaufmann)
+    private void CalculateJacobian(JacobianFunc Jac, double[] alpha, double[] coeff, double[,] U, double[] s, double[,] VT, int rank, double[] resid, ref double[,] J, bool full = true) {
       // code is based on VarPro.m by O'Leary and Rust
       // https://www.cs.umd.edu/~oleary/software/varpro/
 
@@ -230,10 +236,10 @@ namespace HEAL.VarPro {
       var T2 = new double[numL, numN]; // TODO allocate once
 
       Array.Clear(J, 0, J.Length);
-      for (int j = 0; j < numN; j++) { // for each nonlinear parameter 
+      for (int j = 0; j < numN; j++) {                        // for each nonlinear parameter 
         for (int col = 0; col < ind.GetLength(1); col++) {
-          if (ind[1, col] == j) { // columns of dPhi relevant to alpha(j)
-            var termIdx = ind[0, col]; // relevant element of coeff
+          if (ind[1, col] == j) {                             // columns of dPhi relevant to alpha(j)
+            var termIdx = ind[0, col];                        // relevant element of coeff
             for (int k = 0; k < m; k++) {
               J[k, j] += coeff[termIdx] * dF[k, col];
             }

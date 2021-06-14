@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -51,7 +52,7 @@ namespace HEAL.VarPro.Test {
       }
 
       double[] initialAlpha = new[] { 0.1 };
-      TestVarPro(initialAlpha, y, phiFunc, jacFunc, phiFunc, yTest, useWGCV: false);
+      TestVarPro(initialAlpha, y, phiFunc, jacFunc, phiFunc, yTest, out _, useWGCV: false);
     }
 
 
@@ -116,11 +117,11 @@ namespace HEAL.VarPro.Test {
 
       void phiFuncTest(double[] alpha, ref double[,] phi) {
         var p = 11;
-        var y = MonthlyLakeErieLevels_1921_1970.Skip(N-p).ToArray();
+        var y = MonthlyLakeErieLevels_1921_1970.Skip(N - p).ToArray();
         var z = alpha[0];
         var g = alpha[1];
         phi = new double[N, 24];
-        for (int t = p; t < N+p; t++) {
+        for (int t = p; t < N + p; t++) {
           var colIdx = 0;
           phi[t - p, colIdx++] = 1.0;
           for (int j = 1; j <= p; j++) {
@@ -134,10 +135,10 @@ namespace HEAL.VarPro.Test {
       }
       var yTest = MonthlyLakeErieLevels_1921_1970.Skip(N).ToArray();
 
-      double[] initialAlpha = new[] { 15.0, 5}; // not given in the paper
+      double[] initialAlpha = new[] { 15.0, 5 }; // not given in the paper
       var alpha = (double[])initialAlpha.Clone();
       Console.WriteLine("O'Leary & Rust (without regularization):");
-      TestVarPro(alpha, y, phiFunc, jacFunc, phiFuncTest, yTest, useWGCV: false);
+      TestVarPro(alpha, y, phiFunc, jacFunc, phiFuncTest, yTest, out var yPredClassical, useWGCV: false);
       {
         // compare to data from paper
         Console.WriteLine();
@@ -145,16 +146,24 @@ namespace HEAL.VarPro.Test {
         Console.WriteLine($"MSE (training)    0.1819");
         Console.WriteLine($"MSE (test)      206.9916");
       }
+
       Console.WriteLine();
       Console.WriteLine("Chen et. al. (with WGCV):");
       alpha = (double[])initialAlpha.Clone();
-      TestVarPro(alpha, y, phiFunc, jacFunc, phiFuncTest, yTest, useWGCV: true);
+      TestVarPro(alpha, y, phiFunc, jacFunc, phiFuncTest, yTest, out var yPredRegularized, useWGCV: true);
+      var alphaRegularized = alpha;
       {
         // compare to data from paper
         Console.WriteLine();
         Console.WriteLine("Reported by Chen et al.: w: 0.303, lambda: 0.623");
         Console.WriteLine($"MSE (training)    0.1881");
         Console.WriteLine($"MSE (test)        0.2617");
+      }
+
+      // generate data for figure
+      Console.WriteLine("Index\tMeasured\tClassical VP\tRegularized VP");
+      for (int i=0;i<yTest.Length;i++) {
+        Console.WriteLine($"{i+1}\t{yTest[i]}\t{yPredClassical[i]}\t{yPredRegularized[i]}");
       }
     }
 
@@ -221,7 +230,7 @@ namespace HEAL.VarPro.Test {
       Console.WriteLine("O'Leary & Rust (without regularization):");
       Console.WriteLine("----------------------------------------");
       var alpha = (double[])initialAlpha.Clone();
-      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, yTest, useWGCV: false);
+      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, yTest, out _, useWGCV: false);
       Console.WriteLine($"Optimal    alpha: {string.Join(" ", optAlpha.Select(ai => ai.ToString("e3")))}");
       Console.WriteLine($"Identified alpha: {string.Join(" ", alpha.Select(ai => ai.ToString("e3")))}");
       {
@@ -239,10 +248,10 @@ namespace HEAL.VarPro.Test {
           }
           r[i] = yTest[i] - yPred[i];
         }
-        Console.WriteLine($"||coeff||²        {Dot(coeff, coeff):G4}");
-        Console.WriteLine($"||resid_test||²   {Dot(r, r):G4}");
-        Console.WriteLine($"||resid_test||    {Math.Sqrt(Dot(r, r)):G4}");
-        Console.WriteLine($"MSE (test)        {Dot(r, r) / r.Length:G4}");
+        Console.WriteLine($"||coeff||²        {Dot(coeff, coeff):e4}");
+        Console.WriteLine($"||resid_test||²   {Dot(r, r):e4}");
+        Console.WriteLine($"||resid_test||    {Math.Sqrt(Dot(r, r)):e4}");
+        Console.WriteLine($"MSE (test)        {Dot(r, r) / r.Length:e4}");
       }
 
 
@@ -251,7 +260,7 @@ namespace HEAL.VarPro.Test {
       Console.WriteLine("Chen et. al. (with WGCV):");
       Console.WriteLine("----------------------------------------");
       alpha = (double[])initialAlpha.Clone();
-      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, yTest, useWGCV: true);
+      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, yTest, out _, useWGCV: true);
 
       Console.WriteLine($"Optimal    alpha: {string.Join(" ", optAlpha.Select(ai => ai.ToString("e3")))}");
       Console.WriteLine($"Identified alpha: {string.Join(" ", alpha.Select(ai => ai.ToString("e3")))}");
@@ -271,13 +280,121 @@ namespace HEAL.VarPro.Test {
           }
           r[i] = yTest[i] - yPred[i];
         }
-        Console.WriteLine($"||coeff||²        {Dot(coeff, coeff):G4}");
-        Console.WriteLine($"||resid_test||²   {Dot(r, r):G4}");
-        Console.WriteLine($"||resid_test||    {Math.Sqrt(Dot(r, r)):G4}");
-        Console.WriteLine($"MSE (test)        {Dot(r, r) / r.Length:G4}");
+        Console.WriteLine($"||coeff||²        {Dot(coeff, coeff):e4}");
+        Console.WriteLine($"||resid_test||²   {Dot(r, r):e4}");
+        Console.WriteLine($"||resid_test||    {Math.Sqrt(Dot(r, r)):e4}");
+        Console.WriteLine($"MSE (test)        {Dot(r, r) / r.Length:e4}");
       }
     }
 
+    [TestMethod]
+    public void ChenTableIII() {
+      // Guang-Yong Chen, Min Gan, C.L. Philip Chen, Han-Xiong Li, 
+      // A Regularized Variable Projection Algorithm for Separable 
+      // Nonlinear Least-Squares Problems
+      // IEEE Transactions on Automatic Control, Vol. 64, No. 2,
+      // Feb. 2019
+
+      // III.C Parameter Estimation of a Complex Exponential Model
+      // Noise sensitivity
+
+      var N = 151;
+
+      void phiFunc(double[] alpha, ref double[,] phi) {
+        phi = new double[N, 2];
+        var t = 0.0;
+        var deltaT = 0.01;
+        for (int i = 0; i < N; i++) {
+          phi[i, 0] = Math.Exp(-alpha[1] * t) * Math.Cos(alpha[2] * t);
+          phi[i, 1] = Math.Exp(-alpha[0] * t) * Math.Cos(alpha[1] * t);
+          t += deltaT;
+        }
+      }
+
+      void jacFunc(double[] alpha, ref double[,] Jac, ref int[,] ind) {
+        ind = new int[,] {
+          { 0, 0, 1, 1 }, // index of term
+          { 1, 2, 0, 1 } // index of alpha
+         };
+        Jac = new double[N, ind.GetLength(1)];
+
+        var t = 0.0;
+        var deltaT = 0.01;
+        for (int i = 0; i < N; i++) {
+          Jac[i, 0] = -t * Math.Exp(-alpha[1] * t) * Math.Cos(alpha[2] * t);
+          Jac[i, 1] = -t * Math.Exp(-alpha[1] * t) * Math.Sin(alpha[2] * t);
+
+          Jac[i, 2] = -t * Math.Exp(-alpha[0] * t) * Math.Cos(alpha[1] * t);
+          Jac[i, 3] = -t * Math.Exp(-alpha[0] * t) * Math.Sin(alpha[1] * t);
+
+          t += deltaT;
+        }
+      }
+
+      var y = new double[N];
+      var yTest = new double[N]; // y = yTest + noise
+
+      var optAlpha = new double[] { 1, 1, 15 }; // true alpha
+      var c = new double[] { 3, 5 }; // true c
+      double[,] phi = null;
+      phiFunc(optAlpha, ref phi);
+
+      for (int i = 0; i < N; i++) {
+        yTest[i] = c[0] * phi[i, 0]
+                 + c[1] * phi[i, 1];
+      }
+
+
+      double[] initialAlpha = new[] { 0.8457, 2.3331, 7.4757 };
+
+      var random = new Random(123);
+      Console.WriteLine();
+      Console.WriteLine("noise  classical VP    regularized VP");
+      foreach (var noiseSigma in new[] { 0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6 }) {
+
+
+        // average of 30 reps
+        int reps = 30;
+        var mseClassical = new List<double>();
+        var mseRegularized = new List<double>();
+        for (int rep = 0; rep < reps; rep++) {
+          for (int i = 0; i < N; i++) {
+            y[i] = yTest[i] + RandNormal(random, noiseSigma);
+          }
+
+          var alpha = (double[])initialAlpha.Clone();
+          VariableProjection.Fit(phiFunc, jacFunc, y, alpha, out var coeff, out _, useWGCV: false, eps: 1e-12);
+          phiFunc(alpha, ref phi);
+
+          var yPred = new double[y.Length];
+          var r = new double[y.Length];
+          for (int i = 0; i < N; i++) {
+            for (int j = 0; j < coeff.Length; j++) {
+              yPred[i] += phi[i, j] * coeff[j];
+            }
+            r[i] = yTest[i] - yPred[i];
+          }
+          mseClassical.Add(Dot(r, r) / r.Length);
+
+          alpha = (double[])initialAlpha.Clone();
+          VariableProjection.Fit(phiFunc, jacFunc, y, alpha, out coeff, out _, useWGCV: true, eps: 1e-12);
+          phiFunc(alpha, ref phi);
+
+          yPred = new double[y.Length];
+          r = new double[y.Length];
+          for (int i = 0; i < N; i++) {
+            for (int j = 0; j < coeff.Length; j++) {
+              yPred[i] += phi[i, j] * coeff[j];
+            }
+            r[i] = yTest[i] - yPred[i];
+          }
+          mseRegularized.Add(Dot(r, r) / r.Length);
+
+        }
+
+        Console.WriteLine($"{noiseSigma,5:g2} {mseClassical.Average(),15:e5} {mseRegularized.Average(),15:e5}");
+      }
+    }
 
     [TestMethod]
     public void Linear() {
@@ -314,7 +431,7 @@ namespace HEAL.VarPro.Test {
       }
 
       double[] initialAlpha = new double[0];
-      TestVarPro(initialAlpha, y, phiFunc, jacFunc, phiFunc, yTest, useWGCV: false);
+      TestVarPro(initialAlpha, y, phiFunc, jacFunc, phiFunc, yTest, out _, useWGCV: false);
     }
 
     [TestMethod]
@@ -366,7 +483,7 @@ namespace HEAL.VarPro.Test {
       }
 
       double[] initialAlpha = new[] { 2.5, -3.5, 5.5, 1.0 };
-      TestVarPro(initialAlpha, y, phiFunc, jacFunc, phiFunc, y, useWGCV: false); // train == test
+      TestVarPro(initialAlpha, y, phiFunc, jacFunc, phiFunc, y, out _, useWGCV: false); // train == test
     }
 
     [TestMethod]
@@ -435,46 +552,46 @@ namespace HEAL.VarPro.Test {
       // var initialAlpha = new[] { 2.055, 0.05, 1.0 }; // second start point. 6 iterations required to converge
       Console.WriteLine("  Classical VP:");
       var alpha = (double[])initialAlpha.Clone();
-      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, y, useWGCV: false); // train == test
+      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, y, out _, useWGCV: false); // train == test
 
       Console.WriteLine("  WGCV-Regularized VP:");
       alpha = (double[])initialAlpha.Clone();
-      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, y, useWGCV: true); // train == test
-      
+      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, y, out _, useWGCV: true); // train == test
+
       // var optAlpha = new double[] { 1.672719, 0.4272597, 0.9157357 }; // true alpha
       Console.WriteLine("Second starting point { 2.055, 0.05, 1.0 }:");
       initialAlpha = new[] { 2.055, 0.05, 1.0 }; // 4 iterations required to converge
       Console.WriteLine("  Classical VP:");
       alpha = (double[])initialAlpha.Clone();
-      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, y, useWGCV: false); // train == test
+      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, y, out _, useWGCV: false); // train == test
 
       Console.WriteLine("  WGCV-Regularized VP:");
       alpha = (double[])initialAlpha.Clone();
-      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, y, useWGCV: true); // train == test
+      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, y, out _, useWGCV: true); // train == test
     }
 
     private void TestVarPro(double[] alpha, double[] y, VariableProjection.FeatureFunc phiFunc, VariableProjection.JacobianFunc jacFunc,
-      VariableProjection.FeatureFunc phiFuncTest, double[] yTest, bool useWGCV = true) {
+      VariableProjection.FeatureFunc phiFuncTest, double[] yTest, out double[] yPred, bool useWGCV = true) {
 
       var sw = new Stopwatch();
       sw.Start();
 
-      VariableProjection.Report finalRep = null;
-
       void writeProgress(VariableProjection.Report rep, CancellationToken cancelToken) {
         var coeffNormSqr = Dot(rep.coeff, rep.coeff);
-        Console.WriteLine($"{rep.iter} ||r||² {rep.residNormSqr:e3} ||coeff||² {coeffNormSqr:e3} obj. {rep.residNormSqr + rep.lambda * coeffNormSqr:e3} line-search step: {rep.lineSearchStep:e2} lam: {rep.lambda:e3} w: {rep.w:e3} a: [{string.Join(" ", rep.alpha.Select(ai => ai.ToString("e3")))}]");
-        finalRep = rep;
+        Console.WriteLine($"{rep.iter,3}{rep.residNormSqr + rep.lambda * coeffNormSqr,11:e3}{rep.residNormSqr,11:e3}{coeffNormSqr,11:e3}" +
+                          $"{rep.lineSearchStep,10:e2}{rep.lambda,11:e3}{rep.w,11:e3} [{string.Join(" ", rep.alpha.Take(3).Select(ai => ai.ToString("e3")))}]");
       }
 
-      VariableProjection.Fit(phiFunc, jacFunc, y, alpha, out var coeff, iterationCallback: writeProgress, useWGCV: useWGCV);
+      Console.WriteLine($"{"It",3}{"     C     ",11}{"   ||r||²   ",11}{"  ||c||²  ",11}{"  step  ",10}{"    lam    ",11}{"     w     ",11}{"    alpha    ",21}");
+
+      VariableProjection.Fit(phiFunc, jacFunc, y, alpha, out var coeff, out var report, iterationCallback: writeProgress, useWGCV: useWGCV);
 
       double[,] testPhi = null;
       phiFuncTest(alpha, ref testPhi);
       var m = yTest.Length;
       var n = testPhi.GetLength(1);
       var r = new double[m];
-      var yPred = new double[m];
+      yPred = new double[m];
       for (int i = 0; i < m; i++) {
         for (int j = 0; j < n; j++) {
           yPred[i] += testPhi[i, j] * coeff[j];
@@ -484,13 +601,13 @@ namespace HEAL.VarPro.Test {
 
       Console.WriteLine();
 
-      Console.WriteLine($"||coeff||²       {Dot(coeff, coeff):G4}");
-      Console.WriteLine($"||resid_train||²  {finalRep.residNormSqr:G4}");
-      Console.WriteLine($"||resid_train||   {finalRep.residNorm:G4}");
-      Console.WriteLine($"MSE_train         {finalRep.residNormSqr / r.Length:G4}");
-      Console.WriteLine($"||resid_test||²  {Dot(r, r):G4}");
-      Console.WriteLine($"||resid_test||   {Math.Sqrt(Dot(r, r)):G4}");
-      Console.WriteLine($"MSE_test         {Dot(r, r) / r.Length:G4}");
+      Console.WriteLine($"||coeff||²       {Dot(coeff, coeff):e4}");
+      Console.WriteLine($"||resid_train||² {report.residNormSqr:e4}");
+      Console.WriteLine($"||resid_train||  {report.residNorm:e4}");
+      Console.WriteLine($"MSE_train        {report.residNormSqr / r.Length:e4}");
+      Console.WriteLine($"||resid_test||²  {Dot(r, r):e4}");
+      Console.WriteLine($"||resid_test||   {Math.Sqrt(Dot(r, r)):e4}");
+      Console.WriteLine($"MSE_test         {Dot(r, r) / r.Length:e4}");
       Console.WriteLine($"Runtime:         {sw.ElapsedMilliseconds}ms");
 
 

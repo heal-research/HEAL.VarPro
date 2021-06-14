@@ -7,7 +7,13 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HEAL.VarPro", "HEAL.VarPro\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HEAL.VarPro.Demo", "HEAL.VarPro.Demo\HEAL.VarPro.Demo.csproj", "{C19AFFDE-7D3A-404E-9B9F-4EF4AF1CB9DE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HEAL.VarPro.Test", "HEAL.VarPro.Test\HEAL.VarPro.Test.csproj", "{A2F95913-99A6-4A7A-A509-AD990A55C227}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HEAL.VarPro.Test", "HEAL.VarPro.Test\HEAL.VarPro.Test.csproj", "{A2F95913-99A6-4A7A-A509-AD990A55C227}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{D31FC8E6-F816-4A63-AE2E-9F8B18691A24}"
+	ProjectSection(SolutionItems) = preProject
+		LICENSE.txt = LICENSE.txt
+		README.md = README.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
