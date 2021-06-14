@@ -1,10 +1,11 @@
 ﻿This project contains an implementation of variable projection with L1 regularization 
 for separable non-linear least squares as described in: 
 
-```Guang-Yong Chen, Min Gan, C.L. Philip Chen, Han-Xiong Li: 
+```
+Guang-Yong Chen, Min Gan, C.L. Philip Chen, Han-Xiong Li: 
 A Regularized Variable Projection Algorithm for Separable 
 Nonlinear Least-Squares Problems, IEEE Transactions on Automatic Control, Vol. 64, No. 2,
-Feb. 2019
+Feb. 2019 https://doi.org/10.1109/TAC.2018.2838045
 ```
 
 The implementation is partially based on the MATLAB implementation (varpro.m) of O'Leary and Rust (https://www.cs.umd.edu/~oleary/software/varpro/) . 
