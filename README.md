@@ -78,7 +78,7 @@ The code uses ALGLIB Free Edition version 3.17.0 which is distributed under GPL3
 ALGLIB Commercial Edition is distributed under license which is friendly to commercial users and can be requested from https://www.alglib.net/.
 
 ## License
-HEAL.VarPro is [licensed] {LICENSE.txt} under the MIT License.
+HEAL.VarPro is under the [MIT License](LICENSE.txt).
 
 ```
 MIT License
