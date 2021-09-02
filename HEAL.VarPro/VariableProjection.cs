@@ -79,7 +79,7 @@ namespace HEAL.VarPro {
         CalculateJacobian(Jac, alpha, coeff, U, s, VT, rank, r, ref J);
 
         // Step 4: Calculate the gradient of the objective function (17)
-        //         with resprect to the nonlinear parameters
+        //         with respect to the nonlinear parameters
         //         ∇C = - J^T r
         alglib.rmatrixgemv(nAlpha, m, -1.0, J, 0, 0, 1, r, 0, 0.0, ref grad, 0);
         // Step 5: if ||∇C||^2 < eps, terminate the algorithm
@@ -157,7 +157,7 @@ namespace HEAL.VarPro {
 
 
     // solves the regularized problem for the linear coefficients
-    // the error and penalty terms of the objective funcion C are returned separately
+    // the error and penalty terms of the objective function C are returned separately
     // additionally produces the updated WGCV parameters lambda and w
     private void C(double[] y, double[] alpha,
       double lambda, double w,
@@ -274,7 +274,7 @@ namespace HEAL.VarPro {
     private static double[] SolveLS(double[,] A, double[] y) {
       var m = A.GetLength(0);
       var n = A.GetLength(1);
-      alglib.rmatrixsolvels(A, m, n, y, 0.0, out var info, out var report, out var x);
+      alglib.rmatrixsolvels(A, m, n, y, 0.0, out var info, out var _, out var x);
       if (info < 0) throw new InvalidProgramException("Problem when solving linear system (LS)");
       return x;
     }

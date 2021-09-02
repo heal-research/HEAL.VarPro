@@ -148,7 +148,7 @@ namespace HEAL.VarPro.Test {
       }
 
       Console.WriteLine();
-      Console.WriteLine("Chen et. al. (with WGCV):");
+      Console.WriteLine("Chen et al. (with WGCV):");
       alpha = (double[])initialAlpha.Clone();
       TestVarPro(alpha, y, phiFunc, jacFunc, phiFuncTest, yTest, out var yPredRegularized, useWGCV: true);
       var alphaRegularized = alpha;
