@@ -162,8 +162,8 @@ namespace HEAL.VarPro.Test {
 
       // generate data for figure
       Console.WriteLine("Index\tMeasured\tClassical VP\tRegularized VP");
-      for (int i=0;i<yTest.Length;i++) {
-        Console.WriteLine($"{i+1}\t{yTest[i]}\t{yPredClassical[i]}\t{yPredRegularized[i]}");
+      for (int i = 0; i < yTest.Length; i++) {
+        Console.WriteLine($"{i + 1}\t{yTest[i]}\t{yPredClassical[i]}\t{yPredRegularized[i]}");
       }
     }
 
@@ -570,6 +570,286 @@ namespace HEAL.VarPro.Test {
       TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, y, out _, useWGCV: true); // train == test
     }
 
+    [TestMethod]
+    public void Poly10_Linear() {
+      // y = x1 x2 + x3 x4 + x5 x6 + x1 x7 x9 + x3 x6 x10
+      // no noise
+      // we use a polynomial feature expansion to a polynomial of total degree 3
+      // There are no non-linear features, so we only test the code for least-squares solving.
+
+      var terms = new List<string>();
+      var n = 100;
+      var nTerms = Binom(11 + 3 - 1, 3);
+      var x = new double[n, 11];
+      var f = new double[n, 10 * nTerms];
+      var i = 0;
+      for (int r = 0; r < n; r++) { x[r, i] = 1.0; } // const column
+
+      // 10 random variables ~ N(0.0, 1.0)
+      i++;
+      var rand = new System.Random(1234);
+      for (; i <= 10; i++) {
+        for (int r = 0; r < n; r++) { x[r, i] = RandNormal(rand, 1.0); }
+      }
+
+
+      i = 0;
+      // generate all polynomial terms
+      for (int aIdx = 0; aIdx <= 10; aIdx++) {
+        for (int bIdx = aIdx; bIdx <= 10; bIdx++) {
+          for (int cIdx = bIdx; cIdx <= 10; cIdx++) {
+            var term = "";
+            if (aIdx > 0) term += "x" + aIdx;
+            if (bIdx > 0) term += "x" + bIdx;
+            term += cIdx == 0 ? "1" : ("x" + cIdx);
+            terms.Add(term);
+            for (int r = 0; r < n; r++) { f[r, i] = x[r, aIdx] * x[r, bIdx] * x[r, cIdx]; }
+            i++;
+          }
+        }
+      }
+
+      Debug.Assert(i == nTerms); // all terms generated?
+
+      // target
+      var y = new double[n];
+      for (int r = 0; r < n; r++)
+        y[r] = x[r, 1] * x[r, 2]
+          + x[r, 3] * x[r, 4]
+          + x[r, 5] * x[r, 6]
+          + x[r, 1] * x[r, 7] * x[r, 9]
+          + x[r, 3] * x[r, 6] * x[r, 10];
+
+
+
+      void phiFunc(double[] alpha, ref double[,] phi) {
+        if (phi == null) phi = (double[,])f.Clone();
+        else Array.Copy(f, phi, phi.Length); // should work for 2d arrays
+      }
+
+      void jacFunc(double[] alpha, ref double[,] Jac, ref int[,] ind) {
+        // no non-linear params
+        if (Jac == null) {
+          Jac = new double[n, 0];
+          ind = new int[2, 0];
+        }
+      }
+
+
+      VarPro.VariableProjection.Fit(phiFunc, jacFunc, y, new double[0], out var coeff, out var report, useWGCV: true);
+      var threshold = 0.2;
+      var selectedTerms = 0;
+      for (i = 0; i < coeff.Length; i++) {
+        if (Math.Abs(coeff[i]) > threshold) {
+          if (selectedTerms > 0) Console.Write(" + ");
+          Console.Write($"{coeff[i]:e4} {terms[i]}");
+          selectedTerms++;
+        }
+      }
+    }
+
+    [TestMethod]
+    public void SumOfExponentials() {
+      // Predict
+      //  y = exp(- (x1 - 1)²) / (1.2 + (x2 - 2.5)²)
+      // using a sum of terms of the form exp(a*x)
+      var xy = new double[,] {
+{0.471677717536613, 0.74741918836893, 0.177089728292188},
+{2.22447705260117, 2.384135614122, 0.184005316835132},
+{2.79197140573337, 2.98098888878734, 0.0281620545293636},
+{3.67347702686057, 3.94920519998977, 0.000238423706801869},
+{3.59747060185705, 1.30087382465156, 0.000445266297963256},
+{1.58490849469903, 1.425988084060, 0.301790501193091},
+{2.66258209931259, 0.33589706601013, 0.0107129271563633},
+{0.43610751692580, 0.71185685817894, 0.165464120764703},
+{3.48444943441647, 2.70987679499897, 0.00167681387824439},
+{2.87324755559053, 3.37569611982342, 0.0152148024934994},
+{2.75689897736462, 0.42925535850908, 0.00831865349421553},
+{3.86387051378001, 3.588135962301, 0.000115003178162785},
+{2.27270718949677, 2.65955756016997, 0.16152445175425},
+{1.82296865461929, 0.40576954037085, 0.0909445510199988},
+{0.95985691765319, 2.21196241672429, 0.77818905840432},
+{2.11957382881538, 1.69084627995986, 0.153941202361293},
+{0.73998874096199, 3.30367760930762, 0.506327506970041},
+{2.32939345434527, 1.27488999559425, 0.063236729771379},
+{2.56193637001839, 2.32299257789808, 0.0708109639852804},
+{3.21325905768044, 1.01293748566251, 0.00218612391199958},
+{1.64952193509078, 1.88460879113632, 0.415411998545276},
+{2.52607064096398, 2.89322759057237, 0.0719043559006391},
+{0.37519061487987, 3.88681386816008, 0.21669558160062},
+{1.39608479319049, 1.55811486084902, 0.409556046291366},
+{3.72050935565971, 0.77588503336903, 0.000146321560831018},
+{1.67474663466559, 3.79237403545817, 0.220981694209407},
+{3.14447897808731, 1.46703024212435, 0.00443929740357612},
+{1.18879971108139, 1.77001877470641, 0.556868686267464},
+{2.57117882330697, 0.96067298105002, 0.0237295024263727},
+{1.02712829891293, 3.29841053693053, 0.543829340683327},
+{2.194392233783, 1.81583137263447, 0.143955638114054},
+{1.35281002175827, 2.630584295287, 0.725490961748661},
+{3.84834996726093, 1.18772616793581, 0.000102526702993097},
+{3.04852033507743, 1.62055604786625, 0.0076259033979074},
+{2.835785739481, 1.16197468514135, 0.0114990951974411},
+{1.59801729049022, 2.50821541715605, 0.582746807643732},
+{2.66950024917477, 3.93593797924368, 0.0188819958546992},
+{1.38274272677552, 1.49161224809746, 0.389622329123069},
+{1.95979888396333, 1.98648928573506, 0.271939200551171},
+{1.50506813754446, 2.76196908677508, 0.610773147540629},
+{2.09725292858138, 3.47641085658139, 0.139317213288209},
+{1.78361624730369, 0.70066162047457, 0.121946567054367},
+{2.78785210707873, 0.55313095789242, 0.00819762338315817},
+{3.92182669893881, 0.30662399891452, 3.26180265555479E-05},
+{1.39459101471458, 3.840527740712, 0.285555538934434},
+{0.74569429898301, 0.90845602201494, 0.251104305423187},
+{3.033033373959, 0.86472849463222, 0.00413800535219111},
+{3.95919472471792, 2.34246035582443, 0.000128494265114893},
+{1.81708128953285, 3.12131641319052, 0.323402226225631},
+{3.13513802307079, 0.76504385088687, 0.00248795466280997},
+{3.01830466620585, 2.41319957319954, 0.0140921940378313},
+{0.88175157908856, 2.51000546149677, 0.821693629630674},
+{3.913232759366, 3.89512643243538, 6.55185673338936E-05},
+{1.98908827425658, 2.853544843535, 0.283738138845764},
+{1.55205953860471, 2.34654214420508, 0.602585543653066},
+{2.13797142764972, 1.47395178619166, 0.12158499276512},
+{2.14943498329945, 1.61461006813091, 0.134488966991641},
+{3.61468763153876, 2.170680679467, 0.000820632175031198},
+{3.00997992500429, 3.152315073495, 0.0108255742288722},
+{2.42533550107045, 1.58141252717036, 0.0641588299604641},
+{1.27958407273506, 2.687041837230, 0.748843102280906},
+{0.75887306536521, 1.55414671286804, 0.450443261663259},
+{2.70229026670621, 1.57296702463016, 0.0267772658325181},
+{1.50203875433701, 1.338030800651, 0.304768171900962},
+{0.85012438866545, 2.62087264999768, 0.805021817777604},
+{3.18152721805534, 3.44726704753639, 0.00408792042702153},
+{3.33915629732403, 0.70002352886368, 0.000946928014199353},
+{3.44147693590295, 3.26015796665106, 0.00144997516779128},
+{2.14601954457956, 3.28092139882057, 0.148584974910111},
+{1.42820747639709, 0.66332469733043, 0.182024617059069},
+{2.76250214496686, 1.830261345540, 0.0271518568421737},
+{2.76687748643264, 3.44127290196281, 0.0211291461747445},
+{0.73878544269567, 3.73529648336938, 0.342647604704539},
+{0.90722495673858, 3.74561452838723, 0.360316085975723},
+{2.26516580843953, 2.19148250319797, 0.155782175848903},
+{1.66880573417731, 3.64232393625246, 0.255239869651753},
+{2.60561677222271, 1.94575590902142, 0.0503755220620965},
+{2.82605778908498, 2.82663953258345, 0.0272694879013201},
+{2.49544805083318, 3.45748213442449, 0.0504760063520445},
+{1.89908489594215, 1.11900162839307, 0.143407987697774},
+{3.091990091533, 3.00717813358809, 0.00862612678751525},
+{1.60735245209824, 2.421183133037, 0.573290933755564},
+{3.89869697943765, 3.96166497638022, 6.72323590424165E-05},
+{2.31411674442098, 2.40340056589418, 0.147051780669988},
+{0.96015042852613, 1.68239314045813, 0.53434489526657},
+{3.36424111343553, 3.41364894647003, 0.00183628427512259},
+{3.09677169867716, 3.73976723387366, 0.00450160033889463},
+{2.58033571161338, 1.19773077620141, 0.028417257018944},
+{3.404974463443, 1.42140589335966, 0.00130182425485564},
+{0.69508472694900, 3.65328026671272, 0.360157258757033},
+{3.408407035146, 3.78032180661809, 0.00106587928881656},
+{2.03701505191555, 0.90696195236103, 0.0912739866198576},
+{0.46951130839751, 3.33566408495783, 0.397565668335093},
+{3.06152477973642, 0.94973749652266, 0.00395910080965704},
+{3.59192660627699, 3.00409599288928, 0.000831333544051649},
+{3.73966880709391, 1.74661901862049, 0.000311099365247085},
+{1.06916081108366, 3.790405692833, 0.347356786564297},
+{0.30739091008608, 2.12786087538764, 0.462435765295237},
+{3.12905329873996, 0.38518859755368, 0.00189509735975009},
+{3.21223181700619, 3.42260815334101, 0.0036523027139464}
+      };
+
+      var n = 100;
+      var y = new double[100];
+      for (int i = 0; i < y.Length; i++) { y[i] = xy[i, 2]; }
+      var y_mean = y.Average();
+      var y_var = y.Select(yi => (yi - y_mean) * (yi - y_mean)).Sum() / (n - 1);
+
+      int nBasisFunctionsPerVariable = 5;
+      var nCols = nBasisFunctionsPerVariable * 2;
+
+
+      void phiFunc(double[] alpha, ref double[,] phi) {
+        // use multiple basis functions of the form exp(ax)
+        if (phi == null) phi = new double[n, nCols + 1];
+        int alphaIdx = 0;
+        // basis functions for x1
+        int i = 0;
+        for (; i < 5; i++) {
+          for (int r = 0; r < n; r++) {
+            phi[r, i] = Math.Exp(alpha[alphaIdx] * xy[r, 0]);
+          }
+          alphaIdx++;
+        }
+        // basis functions for x2
+        for (; i < 10; i++) {
+          for (int r = 0; r < n; r++) {
+            phi[r, i] = Math.Exp(alpha[alphaIdx] * xy[r, 1]);
+          }
+          alphaIdx++;
+        }
+        // constant
+        for (int r = 0; r < n; r++) {
+          phi[r, i] = 1.0;
+        }
+      }
+
+      void jacFunc(double[] alpha, ref double[,] Jac, ref int[,] ind) {
+        if (Jac == null) {
+          Jac = new double[n, nCols];
+          ind = new int[2, nCols];
+          for (int j = 0; j < nCols; j++) {
+            ind[0, j] = j; ind[1, j] = j;
+          }
+        }
+        int alphaIdx = 0;
+        // basis functions for x1
+        int i = 0;
+        for (; i < nCols / 2; i++) {
+          for (int r = 0; r < n; r++) {
+            Jac[r, i] = xy[r, 0] * Math.Exp(alpha[alphaIdx] * xy[r, 0]);
+          }
+          alphaIdx++;
+        }
+        // basis functions for x2
+        for (; i < nCols; i++) {
+          for (int r = 0; r < n; r++) {
+            Jac[r, i] = xy[r, 1] * Math.Exp(alpha[alphaIdx] * xy[r, 1]);
+          }
+          alphaIdx++;
+        }
+      }
+      var rand = new Random(1234);
+      var alpha = Enumerable.Range(0, nCols).Select(_ => RandNormal(rand, 1.0)).ToArray(); // init alpha randomly;
+      VarPro.VariableProjection.Fit(phiFunc, jacFunc, y, alpha, out var coeff, out var report, maxIters: 20, useWGCV: true);
+      Console.WriteLine($"NMSE = {report.residNormSqr / n / y_var:e3}");
+
+      var threshold = 0.1;
+      Console.Write($"{coeff[0]:e4}");
+      for (int i = 1; i <= 5; i++) {
+        if (Math.Abs(coeff[i]) > threshold) Console.Write($" + {coeff[i]:e3} exp({alpha[i - 1]:e3} X1)");
+      }
+      for (int i = 6; i <= 10; i++) {
+        if (Math.Abs(coeff[i]) > threshold) Console.Write($" + {coeff[i]:e3} exp({alpha[i - 1]:e3} X2)");
+      }
+    }
+
+    // https://stackoverflow.com/questions/12983731/algorithm-for-calculating-binomial-coefficient
+    private long Binom(uint n, uint k) {
+      // This function gets the total number of unique combinations based upon N and K.
+      // N is the total number of items.
+      // K is the size of the group.
+      // Total number of unique combinations = N! / ( K! (N - K)! ).
+      // This function is less efficient, but is more likely to not overflow when N and K are large.
+      // Taken from:  http://blog.plover.com/math/choose.html
+      //
+      long r = 1;
+      long d;
+      if (k > n) return 0;
+      for (d = 1; d <= k; d++) {
+        r *= n--;
+        r /= d;
+      }
+      return r;
+    }
+
     private void TestVarPro(double[] alpha, double[] y, VariableProjection.FeatureFunc phiFunc, VariableProjection.JacobianFunc jacFunc,
       VariableProjection.FeatureFunc phiFuncTest, double[] yTest, out double[] yPred, bool useWGCV = true) {
 
@@ -616,7 +896,7 @@ namespace HEAL.VarPro.Test {
       // }
     }
 
-    private double RandNormal(Random random, double noiseSigma) {
+    private double RandNormal(Random random, double sigma) {
       // polar method
       double u, v, q, p;
 
@@ -627,7 +907,7 @@ namespace HEAL.VarPro.Test {
       } while (q >= 1.0 || q == 0.0);
 
       p = Math.Sqrt(-2 * Math.Log(q) / q);
-      return u * p * noiseSigma;
+      return u * p * sigma;
       // x2 = v * p; ignored
     }
 
