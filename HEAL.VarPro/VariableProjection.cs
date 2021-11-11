@@ -124,6 +124,7 @@ namespace HEAL.VarPro {
         for (int i = 0; i < newAlpha.Length; i++) newAlpha[i] -= t * d[i];
 
         C(y, newAlpha, lambda, w, ref coeff, ref r, ref U, ref s, ref VT, out rank, out nextLambda, out nextW, out var newResNormSqr, out var newCoeffNormSqr);
+
         var fx = resNormSqr + nextLambda * coeffNormSqr;
         var fx_new = newResNormSqr + nextLambda * newCoeffNormSqr;
 
@@ -176,6 +177,17 @@ namespace HEAL.VarPro {
 
       var s_full = new double[n];
       alglib.svd.rmatrixsvd(F, m, n, uneeded: 2, vtneeded: 2, additionalmemory: 2, w: ref s, u: ref U, vt: ref VT, null);
+
+      // 1e18 is an arbitrary threshold
+      if(double.IsNaN(s[0]) || double.IsInfinity(s[0]) || s[0] > 1e18) { 
+        // error -> return
+        rank = 0;
+        nextLambda = lambda;
+        nextW = w;
+        resNormSqr = double.MaxValue;
+        coeffNormSqr = double.MaxValue;
+        return;
+      }
 
       var tol = m * 2.2204460492503131E-16;  // the difference between 1.0 and the next larger double value
       var s0 = s[0];
