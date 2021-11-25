@@ -624,7 +624,7 @@ namespace HEAL.VarPro.Test {
 
       void phiFunc(double[] alpha, ref double[,] phi) {
         if (phi == null) phi = (double[,])f.Clone();
-        else Array.Copy(f, phi, phi.Length); // should work for 2d arrays
+        else Array.Copy(f, phi, phi.Length);
       }
 
       void jacFunc(double[] alpha, ref double[,] Jac, ref int[,] ind) {
@@ -653,6 +653,7 @@ namespace HEAL.VarPro.Test {
       // Predict
       //  y = exp(- (x1 - 1)²) / (1.2 + (x2 - 2.5)²)
       // using a sum of terms of the form exp(a*x)
+      #region data
       var xy = new double[,] {
 {0.471677717536613, 0.74741918836893, 0.177089728292188},
 {2.22447705260117, 2.384135614122, 0.184005316835132},
@@ -755,7 +756,7 @@ namespace HEAL.VarPro.Test {
 {3.12905329873996, 0.38518859755368, 0.00189509735975009},
 {3.21223181700619, 3.42260815334101, 0.0036523027139464}
       };
-
+      #endregion
       var n = 100;
       var y = new double[100];
       for (int i = 0; i < y.Length; i++) { y[i] = xy[i, 2]; }
@@ -850,8 +851,76 @@ namespace HEAL.VarPro.Test {
       return r;
     }
 
+    [TestMethod]
+    public void UnivariateHingeFunctions() {
+      // a test using parametric "hinge-function" f(x,a) = max(x - a, 0) and max(a - x, 0)
+
+      // the target is sin(x) for x \in -pi .. pi
+      var n = 20;
+      var y = new double[n];
+      var x = new double[n];
+      for (int i = 0; i < n; i++) {
+        x[i] = -Math.PI + i / (double)n * 2 * Math.PI;
+        y[i] = Math.Sin(x[i]);
+      }
+
+
+      // the model is a sum of 6 hinge functions (3 positive, 3 negative) + a constant offset
+      var nTerms = 6;
+      void phiFunc(double[] alpha, ref double[,] phi) {
+        if (phi == null) phi = new double[n, nTerms + 1];
+        int alphaIdx = 0;
+        // basis functions for x
+
+        for (int i = 0; i < nTerms; i++) {
+          for (int r = 0; r < n; r++) {
+            if (i % 2 == 0)
+              phi[r, i] = Math.Max(x[r] - alpha[alphaIdx], 0.0); // positive
+            else
+              phi[r, i] = Math.Max(alpha[alphaIdx] - x[r], 0.0); // negative
+          }
+          alphaIdx++;
+        }
+        // constant
+        for (int r = 0; r < n; r++) {
+          phi[r, nTerms] = 1.0;
+        }
+      }
+
+      void jacFunc(double[] alpha, ref double[,] Jac, ref int[,] ind) {
+        if (Jac == null) {
+          Jac = new double[n, nTerms];
+          ind = new int[2, nTerms];
+          for (int j = 0; j < nTerms; j++) {
+            ind[0, j] = j; ind[1, j] = j;
+          }
+        }
+        int alphaIdx = 0;
+        for (int i = 0; i < nTerms; i++) {
+          for (int r = 0; r < n; r++) {
+            if (i % 2 == 0)
+              Jac[r, i] = x[r] > alpha[alphaIdx] ? 1.0 : 0.0;
+            else
+              Jac[r, i] = x[r] < alpha[alphaIdx] ? -1.0 : 0.0;
+          }
+          alphaIdx++;
+        }
+      }
+
+
+      var rand = new Random(1234);
+      var alpha = Enumerable.Range(0, nTerms).Select(_ => RandNormal(rand, 1.0)).ToArray(); // init alpha randomly;
+
+      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, y, out var yPred, useWGCV: false);
+      Console.WriteLine("y[i]\tyPred[i]");
+      for (int i = 0; i < y.Length; i++) {
+        Console.WriteLine($"{y[i]}\t{yPred[i]}");
+      }
+    }
+
+
     private void TestVarPro(double[] alpha, double[] y, VariableProjection.FeatureFunc phiFunc, VariableProjection.JacobianFunc jacFunc,
-      VariableProjection.FeatureFunc phiFuncTest, double[] yTest, out double[] yPred, bool useWGCV = true) {
+    VariableProjection.FeatureFunc phiFuncTest, double[] yTest, out double[] yPred, bool useWGCV = true) {
 
       var sw = new Stopwatch();
       sw.Start();
@@ -1523,6 +1592,5 @@ namespace HEAL.VarPro.Test {
 16.433,// "1970-11",
 16.584// "1970-12",
     };
-
   }
 }
