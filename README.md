@@ -71,7 +71,7 @@ The results for 'Classical VP' differ from the results reported in the original 
 
 
 # Using HEAL.VarPro
-```HEAL.VarPro.dll``` uses .NET Standard 2.1 and can be included in .NET and .NET Framework projects.
+```HEAL.VarPro.dll``` uses .NET 5.0 and can be included in .NET and .NET Framework projects.
 Copy ```HEAL.VarPro.dll``` into your project folder and add an assembly reference. Don't forget to copy the .dll to your project output folder as well.
 
 ## ALGLIB Dependency

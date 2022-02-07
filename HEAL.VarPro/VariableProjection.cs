@@ -362,12 +362,10 @@ namespace HEAL.VarPro {
       // When w is fixed the optimal lambda can be obtained by solving (23) easily
       // using standard minimization algorithms.
       double[] x = new double[] { lambda }; // initial value
-      alglib.minlbfgscreatef(1, x, 1e-6, out var state);
-      // alglib.minlbfgsoptguardgradient(state, 1e-5); // for debugging
-      alglib.minlbfgsoptimize(state, func: G, rep: null, obj: null);
-      // alglib.minlbfgsoptguardresults(state, out var optGuardReport);
-      // if (optGuardReport.badgradsuspected || optGuardReport.nonc0suspected || optGuardReport.nonc1suspected) throw new InvalidProgramException();
-      alglib.minlbfgsresults(state, out var lambda_opt, out var report);
+      alglib.minbccreatef(x, 1e-6, out var state);
+      alglib.minbcsetbc(state, new double[] { 0 }, new double[] { double.PositiveInfinity });
+      alglib.minbcoptimize(state, G, null, null);
+      alglib.minbcresults(state, out var lambda_opt, out var report);
       if (report.terminationtype < 0) throw new InvalidProgramException();
       return lambda_opt[0];
     }
