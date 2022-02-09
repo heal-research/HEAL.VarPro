@@ -13,6 +13,7 @@ namespace HEAL.VarPro {
       public double lambda;
       public double w;
       public double lineSearchStep;
+      public double lineSearchIterations;
       public double[] alpha;
       public double[] coeff;
       public double gradNorm;
@@ -46,7 +47,7 @@ namespace HEAL.VarPro {
     private int m;
 
     // buffers
-    private double[] r, s, alpha, coeff, grad;
+    private double[] r, s, alpha, nextAlpha, coeff, grad;
     private double[,] F, dF, J, U, VT, Jac2;
     private int[,] ind;
 
@@ -66,46 +67,22 @@ namespace HEAL.VarPro {
       coeff = varpro.coeff;
     }
     private void FitInternal(out Report report) {
-      int k = 0;
-      int rank;
-      var w = 1.0;
-      var lambda = 0.0;
-      C(y, alpha, lambda, w, ref coeff, ref r, ref U, ref s, ref VT, out rank, out var nextLambda, out var nextW, out var resNormSqr, out var coeffNormSqr);
-      lambda = nextLambda;
-      w = nextW;
+      var w = 1.0; var lambda = 0.0;
+      double fx, nextFx;
+      double prevResNormSqr = double.PositiveInfinity, prevCoeffNormSqr = double.PositiveInfinity; // on iteration k=0 there is no previous result
+      double resNormSqr, coeffNormSqr;
+      double gradNorm = 0.0;
+      nextAlpha = new double[alpha.Length];
+
       var cancellationTokenSource = new CancellationTokenSource();
       report = null;
+      int k = 0;
       while (k <= maxIters) {
-        CalculateJacobian(Jac, alpha, coeff, U, s, VT, rank, r, ref J);
+        var linesearch = false;
+        double[] d = null; // line search direction
 
-        // Step 4: Calculate the gradient of the objective function (17)
-        //         with respect to the nonlinear parameters
-        //         ∇C = - J^T r
-        alglib.rmatrixgemv(nAlpha, m, -1.0, J, 0, 0, 1, r, 0, 0.0, ref grad, 0);
-        // Step 5: if ||∇C||^2 < eps, terminate the algorithm
-        var gradNorm = 0.0;
-        for (int i = 0; i < grad.Length; i++) gradNorm += grad[i] * grad[i];
+        Array.Copy(alpha, nextAlpha, nextAlpha.Length);
 
-        report = new Report() {
-          iter = k,
-          residNorm = Math.Sqrt(resNormSqr),
-          lambda = lambda,
-          residNormSqr = resNormSqr,
-          w = w,
-          alpha = (double[])alpha.Clone(),
-          coeff = (double[])coeff.Clone(),
-          gradNorm = gradNorm
-        };
-
-        if (gradNorm < eps) break;
-
-        // Step 6: Calculate the search direction d using (20), then
-        //         update the nonlinear parameters theta_N by the line
-        //         search procedure and (21)
-        var d = SolveLS(J, r);
-
-
-        #region line search
         // Backtracking line search (Boyd, Convex optimization, Chapter 9)
         // given descent direction d, for f a x \in dom(f), a \in (0, 0.5), b \in (0, 1)
 
@@ -113,124 +90,118 @@ namespace HEAL.VarPro {
         // recommended settings from Boyd, Chapter 9
         var a = 0.1;
         var b = 0.5;
-
-        var t = 1.0;
-
         var predictedChange = 0.0;
-        for (int i = 0; i < grad.Length; i++) predictedChange += grad[i] * d[i];
-        if (predictedChange >= 0) throw new InvalidProgramException("Descent direction does not improve objective. Check your Jacobian calculation");
+        var t = 1.0;
+        var lineSearchEps = 1e-12; // smallest step for line search
+        int lineSearchIterations = 0;
 
-        var newAlpha = (double[])alpha.Clone(); // TODO allocate once
-        for (int i = 0; i < newAlpha.Length; i++) newAlpha[i] -= t * d[i];
+        // line search loop
+        do {
+          // Preparatory step: SVD
+          // For step 2 and step 3 we use the SVD of Phi
+          Phi(nextAlpha, ref F);
+          var n = F.GetLength(1);
+          var s_full = new double[n];
+          alglib.svd.rmatrixsvd(F, m, n, uneeded: 2, vtneeded: 2, additionalmemory: 2, w: ref s, u: ref U, vt: ref VT, null);
+          var tol = m * 2.2204460492503131E-16;  // the difference between 1.0 and the next larger double value
+          var s0 = s[0];
+          var rank = s.Count(si => si > tol * s0); // use rank cut-off
 
-        C(y, newAlpha, lambda, w, ref coeff, ref r, ref U, ref s, ref VT, out rank, out nextLambda, out nextW, out var newResNormSqr, out var newCoeffNormSqr);
+          // left-apply U to y
+          var uy = new double[m];
+          alglib.rmatrixgemv(m, m, alpha: 1.0, a: U, ia: 0, ja: 0, opa: 1,
+            x: y, ix: 0,
+            beta: 0.0, y: ref uy, iy: 0);
 
-        var fx = resNormSqr + nextLambda * coeffNormSqr;
-        var fx_new = newResNormSqr + nextLambda * newCoeffNormSqr;
 
-        while (t > 0 && fx_new > fx + a * t * predictedChange) {
-          t = b * t;
-          for (int i = 0; i < newAlpha.Length; i++) newAlpha[i] = alpha[i] - t * d[i];
-          C(y, newAlpha, lambda, w, ref coeff, ref r, ref U, ref s, ref VT, out rank, out nextLambda, out nextW, out newResNormSqr, out newCoeffNormSqr);
-          fx = resNormSqr + nextLambda * coeffNormSqr;
-          fx_new = newResNormSqr + nextLambda * newCoeffNormSqr;
-        }
-        report.lineSearchStep = t;
+          // Step 2: Calculate the weight parameter w_k and
+          //         regularization parameter lambda_k using (24) and (23)
+          if (WGCV) {
+            w = (k == 0) ? 1.0 : CalculateW(lambda, s, rank, uy);
+            lambda = CalculateLambda(w, lambda, s, rank, uy);
+          }
 
-        lambda = nextLambda;
-        w = nextW;
-        Array.Copy(newAlpha, alpha, alpha.Length);
-        resNormSqr = newResNormSqr;
-        coeffNormSqr = newCoeffNormSqr;
-        #endregion
+          // Step 3: Compute the linear parameters coeff using (16).
+          //         Obtain the residual vector r and its approximated
+          //         Jacobian matrix J using J_GP, J_Kau, or J_R.
+
+          // eqn 16. 
+          // (using SVD)
+          // Golub & Van Loan, Matrix Computations, 4th Edition, Section 6.1.4 Ridge Regression, page 307.
+          if (coeff == null) coeff = new double[n];
+          double[] temp = new double[rank];
+          for (int i = 0; i < rank; i++) temp[i] = s[i] * uy[i] / (s[i] * s[i] + lambda);
+          alglib.rmatrixgemv(n, rank, 1.0, VT, 0, 0, 1, temp, 0, 0.0, ref coeff, 0);
+
+          // calculate residuals
+          r = (double[])y.Clone();
+          alglib.rmatrixgemv(m, n, -1.0, F, 0, 0, 0, coeff, 0, 1.0, ref r, 0); // r = y - F coeff
+
+          resNormSqr = 0.0;
+          for (int i = 0; i < r.Length; i++) resNormSqr += r[i] * r[i];
+
+          coeffNormSqr = 0.0;
+          for (int i = 0; i < coeff.Length; i++) coeffNormSqr += coeff[i] * coeff[i];
+
+          if (!linesearch) {
+            lineSearchIterations--; // do not count this iteration as line-search iteration
+            CalculateJacobian(Jac, nextAlpha, coeff, U, s, VT, rank, r, ref J);
+
+            // Step 4: Calculate the gradient of the objective function (17)
+            //         with respect to the nonlinear parameters
+            //         ∇C = - J^T r
+            alglib.rmatrixgemv(nAlpha, m, -1.0, J, 0, 0, 1, r, 0, 0.0, ref grad, 0);
+            // Step 5: if ||∇C||^2 < eps, terminate the algorithm
+            gradNorm = 0.0;
+            for (int i = 0; i < grad.Length; i++) gradNorm += grad[i] * grad[i];
+
+
+            // Step 6: Calculate the search direction d using (20), then
+            //         update the nonlinear parameters theta_N by the line
+            //         search procedure and (21)
+            d = SolveLS(J, r);
+            for (int i = 0; i < grad.Length; i++) predictedChange += grad[i] * d[i];
+            if (predictedChange >= 0) throw new InvalidProgramException("Descent direction does not improve objective. Check your Jacobian calculation");
+          }
+
+
+          for (int i = 0; i < nextAlpha.Length; i++) nextAlpha[i] = alpha[i] - t * d[i];
+
+          fx = prevResNormSqr + lambda * prevCoeffNormSqr; // C(lambda_k, theta_k-1)
+          nextFx = resNormSqr + lambda * coeffNormSqr; // C(lambda_k, theta_k)
+
+          t = b * t; // prepare for next line search iteration
+          lineSearchIterations++;
+        } while (t > lineSearchEps && nextFx > fx + a * t / b * predictedChange);   // end of line search loop
+
+        if (gradNorm < eps || t <= lineSearchEps || cancellationTokenSource.IsCancellationRequested) break;
+
+        Array.Copy(nextAlpha, alpha, alpha.Length); // apply the step
+        prevResNormSqr = resNormSqr;
+        prevCoeffNormSqr = resNormSqr;
 
         // Step 7: If k > N, terminate the algorithm; else k = k + 1,
         //         turn to step 2.
         k++;
 
-        
+
+        report = new Report() {
+          iter = k,
+          lineSearchIterations = lineSearchIterations,
+          lineSearchStep = t / b,
+          residNorm = Math.Sqrt(prevResNormSqr),
+          lambda = lambda,
+          residNormSqr = prevResNormSqr,
+          w = w,
+          alpha = (double[])alpha.Clone(),
+          coeff = (double[])coeff.Clone(),
+          gradNorm = gradNorm
+        };
+
         iterationCallback?.Invoke(report, cancellationTokenSource.Token);
-
-        if (cancellationTokenSource.IsCancellationRequested) break;
-
       }
     }
 
-
-    // solves the regularized problem for the linear coefficients
-    // the error and penalty terms of the objective function C are returned separately
-    // additionally produces the updated WGCV parameters lambda and w
-    private void C(double[] y, double[] alpha,
-      double lambda, double w,
-      ref double[] coeff,
-      ref double[] r,
-      ref double[,] U,
-      ref double[] s,
-      ref double[,] VT,
-      out int rank,
-      out double nextLambda, out double nextW,
-      out double resNormSqr,
-      out double coeffNormSqr) {
-
-      Phi(alpha, ref F);
-      var n = F.GetLength(1);
-
-      var s_full = new double[n];
-      alglib.svd.rmatrixsvd(F, m, n, uneeded: 2, vtneeded: 2, additionalmemory: 2, w: ref s, u: ref U, vt: ref VT, null);
-
-      // 1e18 is an arbitrary threshold
-      if(double.IsNaN(s[0]) || double.IsInfinity(s[0]) || s[0] > 1e18) { 
-        // error -> return
-        rank = 0;
-        nextLambda = lambda;
-        nextW = w;
-        resNormSqr = double.MaxValue;
-        coeffNormSqr = double.MaxValue;
-        return;
-      }
-
-      var tol = m * 2.2204460492503131E-16;  // the difference between 1.0 and the next larger double value
-      var s0 = s[0];
-      rank = s.Count(si => si > tol * s0);
-
-      // left-apply U to y
-      var uy = new double[m];
-      alglib.rmatrixgemv(m, m, alpha: 1.0, a: U, ia: 0, ja: 0, opa: 1,
-        x: y, ix: 0,
-        beta: 0.0, y: ref uy, iy: 0);
-
-      if (WGCV) {
-        // Step 2: Calculate the weight parameter w_k and
-        //         regularization parameter lambda_k using (24) and (23)
-        nextLambda = CalculateLambda(w, lambda, s, rank, uy);
-        nextW = CalculateW(nextLambda, s, rank, uy);
-      } else {
-        nextLambda = lambda;
-        nextW = w;
-      }
-
-      // Step 3: Compute the linear parameters theta_L using (16).
-      //         Obtain the residual vector r and its approximated
-      //         Jacobian Matrix J using J_GP, J_Kau, or J_R.
-
-      // eqn 16. 
-      // (using SVD)
-      // Golub & Van Loan, Matrix Computations, 4th Edition, Section 6.1.4 Ridge Regression, page 307.
-      if (coeff == null) coeff = new double[n];
-      double[] temp = new double[rank];
-      for (int i = 0; i < rank; i++) temp[i] = s[i] * uy[i] / (s[i] * s[i] + nextLambda);
-      alglib.rmatrixgemv(n, rank, 1.0, VT, 0, 0, 1, temp, 0, 0.0, ref coeff, 0);
-
-      // calculate residuals
-      r = (double[])y.Clone();
-      alglib.rmatrixgemv(m, n, -1.0, F, 0, 0, 0, coeff, 0, 1.0, ref r, 0); // r = y - F coeff
-      
-      resNormSqr = 0.0;
-      for (int i = 0; i < r.Length; i++) resNormSqr += r[i] * r[i];
-
-      coeffNormSqr = 0.0;
-      for (int i = 0; i < coeff.Length; i++) coeffNormSqr += coeff[i] * coeff[i];
-    }
 
 
     // set full=false to drop the second term from the Jacobian (Kaufmann)
@@ -261,7 +232,7 @@ namespace HEAL.VarPro {
       }
 
 
-      double[,] tmp = new double[m - rank, numN]; 
+      double[,] tmp = new double[m - rank, numN];
       alglib.rmatrixgemm(m - rank, numN, m, 1.0, U, 0, rank, 1, J, 0, 0, 0, 0.0, ref tmp, 0, 0);
       alglib.rmatrixgemm(m, numN, m - rank, -1.0, U, 0, rank, 0, tmp, 0, 0, 0, 0.0, ref J, 0, 0);
 

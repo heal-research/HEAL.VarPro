@@ -928,10 +928,10 @@ namespace HEAL.VarPro.Test {
       void writeProgress(VariableProjection.Report rep, CancellationToken cancelToken) {
         var coeffNormSqr = Dot(rep.coeff, rep.coeff);
         Console.WriteLine($"{rep.iter,3}{rep.residNormSqr + rep.lambda * coeffNormSqr,11:e3}{rep.residNormSqr,11:e3}{coeffNormSqr,11:e3}" +
-                          $"{rep.lineSearchStep,10:e2}{rep.lambda,11:e3}{rep.w,11:e3} [{string.Join(" ", rep.alpha.Take(3).Select(ai => ai.ToString("e3")))}]");
+                          $"{rep.lineSearchStep,10:e2}{rep.lambda,11:e3}{rep.w,11:e3}{rep.gradNorm,11:e3}{rep.lineSearchIterations,4} [{string.Join(" ", rep.alpha.Take(3).Select(ai => ai.ToString("e3")))}]");
       }
 
-      Console.WriteLine($"{"It",3}{"     C     ",11}{"   ||r||²   ",11}{"  ||c||²  ",11}{"  step  ",10}{"    lam    ",11}{"     w     ",11}{"    alpha    ",21}");
+      Console.WriteLine($"{"It",3}{"     C     ",11}{"   ||r||²   ",11}{"  ||c||²  ",11}{"  step  ",10}{"    lam    ",11}{"     w     ",11}{"  gradNorm ",11}{"lsit",4}{"    alpha    ",21}");
 
       VariableProjection.Fit(phiFunc, jacFunc, y, alpha, out var coeff, out var report, iterationCallback: writeProgress, useWGCV: useWGCV);
 
