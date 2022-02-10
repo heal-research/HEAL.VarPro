@@ -48,11 +48,12 @@ namespace HEAL.VarPro {
 
     // buffers
     private double[] r, s, alpha, nextAlpha, coeff, grad;
+    private double minLambda;
     private double[,] F, dF, J, U, VT, Jac2;
     private int[,] ind;
 
     public static void Fit(FeatureFunc Phi, JacobianFunc Jac, double[] y, double[] alpha, out double[] coeff, out Report report,
-      int maxIters = 20, Action<Report, CancellationToken> iterationCallback = null, bool useWGCV = true, double eps = 1e-32) {
+      int maxIters = 20, Action<Report, CancellationToken> iterationCallback = null, bool useWGCV = true, double eps = 1e-16, double minLambda = 1e-12) {
       // Step 1: Choose theta_N_0 \in R^k, a small positive number eps and 
       //         the maximum iteration N. Set k = 0;
 
@@ -62,12 +63,13 @@ namespace HEAL.VarPro {
       varpro.eps = eps;
       varpro.maxIters = maxIters;
       varpro.alpha = alpha; // don't copy alpha. Fit() updates alpha
+      varpro.minLambda = minLambda;
 
       varpro.FitInternal(out report);
       coeff = varpro.coeff;
     }
     private void FitInternal(out Report report) {
-      var w = 1.0; var lambda = 0.0;
+      var w = 1.0; var lambda = minLambda;
 
       // line search parameters a and b
       // recommended settings from Boyd, Chapter 9
@@ -130,7 +132,7 @@ namespace HEAL.VarPro {
           //         regularization parameter lambda_k using (24) and (23)
           if (WGCV) {
             w = (k == 0) ? 1.0 : CalculateW(lambda, s, rank, uy);
-            lambda = CalculateLambda(w, lambda, s, rank, uy);
+            lambda = CalculateLambda(w, lambda, s, rank, uy, minLambda);
           }
 
           // Step 3: Compute the linear parameters coeff using (16).
@@ -174,7 +176,7 @@ namespace HEAL.VarPro {
             lineSearchIterations++;
           } else {
             if (lineSearch) {
-              if (t <= lineSearchEps) break; // linesearch unsuccessful
+              if (t <= lineSearchEps) break; // line search unsuccessful
               // line search done -> accept alpha, and C 
               Array.Copy(nextAlpha, alpha, alpha.Length);
               prevResNormSqr = resNormSqr;
@@ -191,6 +193,7 @@ namespace HEAL.VarPro {
             // Step 5: if ||∇C||^2 < eps, terminate the algorithm
             gradNorm = 0.0;
             for (int i = 0; i < grad.Length; i++) gradNorm += grad[i] * grad[i];
+            if (gradNorm < eps || cancellationTokenSource.IsCancellationRequested) break;
 
 
             // Step 6: Calculate the search direction d using (20), then
@@ -202,12 +205,11 @@ namespace HEAL.VarPro {
 
             // Step 7: If k > N, terminate the algorithm; else k = k + 1,
             //         turn to step 2.
-            if (gradNorm < eps || cancellationTokenSource.IsCancellationRequested) break;
 
             report = new Report() {
               iter = k,
               lineSearchIterations = lineSearchIterations,
-              lineSearchStep = t / b,
+              lineSearchStep = lineSearchIterations == 0 ? 1.0 : t / b,
               residNorm = Math.Sqrt(resNormSqr),
               lambda = lambda,
               residNormSqr = resNormSqr,
@@ -334,7 +336,7 @@ namespace HEAL.VarPro {
     }
 
     // length of s is limited to rank
-    private static double CalculateLambda(double w, double lambda, double[] s, int rank, double[] uy) {
+    private static double CalculateLambda(double w, double lambda, double[] s, int rank, double[] uy, double minLambda) {
       var m = uy.Length;
       // eqn (23)
       void G(double[] x, ref double func, object _) {
@@ -365,7 +367,7 @@ namespace HEAL.VarPro {
       double[] x = new double[] { lambda }; // initial value
       alglib.minbccreatef(x, 1e-6, out var state);
       alglib.minbcsetcond(state, 0, 0, 0, 10);
-      alglib.minbcsetbc(state, new double[] { 0 }, new double[] { double.PositiveInfinity });
+      alglib.minbcsetbc(state, new double[] { minLambda }, new double[] { double.PositiveInfinity }); // enforce small positive lambda to prevent ill-conditioned matrices
       alglib.minbcoptimize(state, G, null, null);
       alglib.minbcresults(state, out var lambda_opt, out var report);
       if (report.terminationtype < 0) throw new InvalidProgramException();
