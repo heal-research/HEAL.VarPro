@@ -819,17 +819,7 @@ namespace HEAL.VarPro.Test {
       }
       var rand = new Random(1234);
       var alpha = Enumerable.Range(0, nCols).Select(_ => RandNormal(rand, 1.0)).ToArray(); // init alpha randomly;
-      VarPro.VariableProjection.Fit(phiFunc, jacFunc, y, alpha, out var coeff, out var report, maxIters: 20, useWGCV: true);
-      Console.WriteLine($"NMSE = {report.residNormSqr / n / y_var:e3}");
-
-      var threshold = 0.1;
-      Console.Write($"{coeff[0]:e4}");
-      for (int i = 1; i <= 5; i++) {
-        if (Math.Abs(coeff[i]) > threshold) Console.Write($" + {coeff[i]:e3} exp({alpha[i - 1]:e3} X1)");
-      }
-      for (int i = 6; i <= 10; i++) {
-        if (Math.Abs(coeff[i]) > threshold) Console.Write($" + {coeff[i]:e3} exp({alpha[i - 1]:e3} X2)");
-      }
+      TestVarPro(alpha, y, phiFunc, jacFunc, phiFunc, y, out _, useWGCV: true); // train == test
     }
 
     // https://stackoverflow.com/questions/12983731/algorithm-for-calculating-binomial-coefficient

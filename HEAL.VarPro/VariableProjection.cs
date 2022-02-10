@@ -52,7 +52,7 @@ namespace HEAL.VarPro {
     private int[,] ind;
 
     public static void Fit(FeatureFunc Phi, JacobianFunc Jac, double[] y, double[] alpha, out double[] coeff, out Report report,
-      int maxIters = 20, Action<Report, CancellationToken> iterationCallback = null, bool useWGCV = true, double eps = 1e-16) {
+      int maxIters = 20, Action<Report, CancellationToken> iterationCallback = null, bool useWGCV = true, double eps = 1e-32) {
       // Step 1: Choose theta_N_0 \in R^k, a small positive number eps and 
       //         the maximum iteration N. Set k = 0;
 
@@ -68,41 +68,53 @@ namespace HEAL.VarPro {
     }
     private void FitInternal(out Report report) {
       var w = 1.0; var lambda = 0.0;
-      double fx, nextFx;
+
+      // line search parameters a and b
+      // recommended settings from Boyd, Chapter 9
+      // Backtracking line search (Boyd, Convex optimization, Chapter 9)
+      // given descent direction d, for f a x \in dom(f), a \in (0, 0.5), b \in (0, 1)
+      var a = 0.1;
+      var b = 0.5;
+      var initialT = 1.0;
+      var lineSearchEps = 1e-12; // smallest step for line search
+      bool lineSearch = false; // the first iteration is a full iteration (including calc of Jac and d)
+      double[] d = null; // line search direction
+      var t = initialT;
+
+      double Ck = double.PositiveInfinity, Ck_1 = double.PositiveInfinity;
       double prevResNormSqr = double.PositiveInfinity, prevCoeffNormSqr = double.PositiveInfinity; // on iteration k=0 there is no previous result
       double resNormSqr, coeffNormSqr;
       double gradNorm = 0.0;
       nextAlpha = new double[alpha.Length];
+      Array.Copy(alpha, nextAlpha, nextAlpha.Length); // the initial alpha is the first alpha we try
 
       var cancellationTokenSource = new CancellationTokenSource();
       report = null;
       int k = 0;
+      int lineSearchIterations = 0;
       while (k <= maxIters) {
-        var linesearch = false;
-        double[] d = null; // line search direction
-
-        Array.Copy(alpha, nextAlpha, nextAlpha.Length);
-
-        // Backtracking line search (Boyd, Convex optimization, Chapter 9)
-        // given descent direction d, for f a x \in dom(f), a \in (0, 0.5), b \in (0, 1)
-
-        // line search parameters a and b
-        // recommended settings from Boyd, Chapter 9
-        var a = 0.1;
-        var b = 0.5;
         var predictedChange = 0.0;
-        var t = 1.0;
-        var lineSearchEps = 1e-12; // smallest step for line search
-        int lineSearchIterations = 0;
 
-        // line search loop
-        do {
-          // Preparatory step: SVD
-          // For step 2 and step 3 we use the SVD of Phi
-          Phi(nextAlpha, ref F);
-          var n = F.GetLength(1);
-          var s_full = new double[n];
-          alglib.svd.rmatrixsvd(F, m, n, uneeded: 2, vtneeded: 2, additionalmemory: 2, w: ref s, u: ref U, vt: ref VT, null);
+        // Preparatory step: SVD
+        // For step 2 and step 3 we use the SVD of Phi
+        Phi(nextAlpha, ref F);
+        var n = F.GetLength(1);
+        var s_full = new double[n];
+        alglib.svd.rmatrixsvd(F, m, n, uneeded: 2, vtneeded: 2, additionalmemory: 2, w: ref s, u: ref U, vt: ref VT, null);
+
+        // check numeric issues in F, 1e18 is an artificial threshold
+        if (s.Any(si => double.IsNaN(si) || si > 1e18)) {
+          // if this is the very first iteration then the alpha values supplied by the caller are unusable and we stop
+          if (d == null) throw new InvalidOperationException("Detected numeric problems (NaN, Inf.) in the evluation of Phi.");
+          else {
+            // try a new nextAlpha and continue line search
+            lineSearch = true;
+            for (int i = 0; i < nextAlpha.Length; i++) nextAlpha[i] = alpha[i] - t * d[i];
+            t = b * t;
+            lineSearchIterations++;
+          }
+        } else {
+
           var tol = m * 2.2204460492503131E-16;  // the difference between 1.0 and the next larger double value
           var s0 = s[0];
           var rank = s.Count(si => si > tol * s0); // use rank cut-off
@@ -143,8 +155,33 @@ namespace HEAL.VarPro {
           coeffNormSqr = 0.0;
           for (int i = 0; i < coeff.Length; i++) coeffNormSqr += coeff[i] * coeff[i];
 
-          if (!linesearch) {
-            lineSearchIterations--; // do not count this iteration as line-search iteration
+          // initialize values for cost function on first iteration
+          if (k == 0) {
+            prevCoeffNormSqr = coeffNormSqr;
+            prevResNormSqr = resNormSqr;
+          }
+          Ck = prevResNormSqr + lambda * prevCoeffNormSqr;
+          Ck_1 = resNormSqr + lambda * coeffNormSqr; // C(lambda_k, theta_k)
+
+          // check line search condition (costs improved?)
+          // if no improvement then we update nextAlpha using alpha and t * d
+          // else we calculate the new Jacobian and direction
+          if (lineSearch && t > lineSearchEps && Ck_1 > Ck + a * t / b * predictedChange) {
+            // prepare for next line search iteration
+            lineSearch = true;
+            for (int i = 0; i < nextAlpha.Length; i++) nextAlpha[i] = alpha[i] - t * d[i];
+            t = b * t;
+            lineSearchIterations++;
+          } else {
+            if (lineSearch) {
+              if (t <= lineSearchEps) break; // linesearch unsuccessful
+              // line search done -> accept alpha, and C 
+              Array.Copy(nextAlpha, alpha, alpha.Length);
+              prevResNormSqr = resNormSqr;
+              prevCoeffNormSqr = coeffNormSqr;
+            }
+
+            // full iteration
             CalculateJacobian(Jac, nextAlpha, coeff, U, s, VT, rank, r, ref J);
 
             // Step 4: Calculate the gradient of the objective function (17)
@@ -162,44 +199,37 @@ namespace HEAL.VarPro {
             d = SolveLS(J, r);
             for (int i = 0; i < grad.Length; i++) predictedChange += grad[i] * d[i];
             if (predictedChange >= 0) throw new InvalidProgramException("Descent direction does not improve objective. Check your Jacobian calculation");
+
+            // Step 7: If k > N, terminate the algorithm; else k = k + 1,
+            //         turn to step 2.
+            if (gradNorm < eps || cancellationTokenSource.IsCancellationRequested) break;
+
+            report = new Report() {
+              iter = k,
+              lineSearchIterations = lineSearchIterations,
+              lineSearchStep = t / b,
+              residNorm = Math.Sqrt(resNormSqr),
+              lambda = lambda,
+              residNormSqr = resNormSqr,
+              w = w,
+              alpha = (double[])alpha.Clone(),
+              coeff = (double[])coeff.Clone(),
+              gradNorm = gradNorm
+            };
+
+            iterationCallback?.Invoke(report, cancellationTokenSource.Token);
+
+
+            // generate next alpha 
+            t = initialT;
+            lineSearchIterations = 0;
+            for (int i = 0; i < nextAlpha.Length; i++) nextAlpha[i] = alpha[i] - t * d[i];
+            t = b * t;
+            lineSearch = true;
+            k++;
           }
-
-
-          for (int i = 0; i < nextAlpha.Length; i++) nextAlpha[i] = alpha[i] - t * d[i];
-
-          fx = prevResNormSqr + lambda * prevCoeffNormSqr; // C(lambda_k, theta_k-1)
-          nextFx = resNormSqr + lambda * coeffNormSqr; // C(lambda_k, theta_k)
-
-          t = b * t; // prepare for next line search iteration
-          lineSearchIterations++;
-        } while (t > lineSearchEps && nextFx > fx + a * t / b * predictedChange);   // end of line search loop
-
-        if (gradNorm < eps || t <= lineSearchEps || cancellationTokenSource.IsCancellationRequested) break;
-
-        Array.Copy(nextAlpha, alpha, alpha.Length); // apply the step
-        prevResNormSqr = resNormSqr;
-        prevCoeffNormSqr = resNormSqr;
-
-        // Step 7: If k > N, terminate the algorithm; else k = k + 1,
-        //         turn to step 2.
-        k++;
-
-
-        report = new Report() {
-          iter = k,
-          lineSearchIterations = lineSearchIterations,
-          lineSearchStep = t / b,
-          residNorm = Math.Sqrt(prevResNormSqr),
-          lambda = lambda,
-          residNormSqr = prevResNormSqr,
-          w = w,
-          alpha = (double[])alpha.Clone(),
-          coeff = (double[])coeff.Clone(),
-          gradNorm = gradNorm
-        };
-
-        iterationCallback?.Invoke(report, cancellationTokenSource.Token);
-      }
+        } // else (no numeric issues)
+      } // while k <= N
     }
 
 
@@ -334,6 +364,7 @@ namespace HEAL.VarPro {
       // using standard minimization algorithms.
       double[] x = new double[] { lambda }; // initial value
       alglib.minbccreatef(x, 1e-6, out var state);
+      alglib.minbcsetcond(state, 0, 0, 0, 10);
       alglib.minbcsetbc(state, new double[] { 0 }, new double[] { double.PositiveInfinity });
       alglib.minbcoptimize(state, G, null, null);
       alglib.minbcresults(state, out var lambda_opt, out var report);
